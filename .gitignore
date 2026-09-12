@@ -1,0 +1,6 @@
+# Build output
+MenuNote.app/
+*.zip
+
+# macOS noise
+.DS_Store
