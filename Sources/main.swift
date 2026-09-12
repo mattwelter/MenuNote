@@ -1,19 +1,35 @@
 import Cocoa
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let noteVC = NoteViewController()
     private var pinnedPanel: NSPanel?
 
+    /// The note's size, shared by the popover and the pinned window,
+    /// remembered across launches. Resize the pinned window to change it.
+    private var savedNoteSize: NSSize {
+        get {
+            let defaults = UserDefaults.standard
+            let w = defaults.double(forKey: "MenuNote.width")
+            let h = defaults.double(forKey: "MenuNote.height")
+            if w >= 260, h >= 300 { return NSSize(width: w, height: h) }
+            return NSSize(width: 300, height: 400)
+        }
+        set {
+            UserDefaults.standard.set(Double(newValue.width), forKey: "MenuNote.width")
+            UserDefaults.standard.set(Double(newValue.height), forKey: "MenuNote.height")
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSLog("MenuNote v2.6 — launching")
+        NSLog("MenuNote v2.7 — launching")
         buildMainMenu()
         noteVC.onPinToggled = { [weak self] pinned in
             self?.setPinned(pinned)
         }
 
-        popover.contentSize = NSSize(width: 300, height: 400)
+        popover.contentSize = savedNoteSize
         popover.behavior = .transient   // closes when you click elsewhere
         popover.animates = true
         popover.contentViewController = noteVC
@@ -98,10 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            NSLog("MenuNote v2.6 — opening popover")
+            NSLog("MenuNote v2.7 — opening popover")
+            popover.contentSize = savedNoteSize
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            NSLog("MenuNote v2.6 — popover opened")
+            NSLog("MenuNote v2.7 — popover opened")
         }
     }
 
@@ -125,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let frame = currentFrame ?? NSRect(x: 200, y: 200, width: 300, height: 400)
         let panel = NSPanel(
             contentRect: frame,
-            styleMask: [.titled, .fullSizeContentView],
+            styleMask: [.titled, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -139,15 +156,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         panel.isMovableByWindowBackground = true   // drag it from the header / date area
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentMinSize = NSSize(width: 260, height: 300)
+        panel.delegate = self
         panel.contentViewController = noteVC
-        panel.setFrame(frame, display: true)
+        var pinnedFrame = frame
+        pinnedFrame.size = savedNoteSize
+        panel.setFrame(pinnedFrame, display: true)
 
         pinnedPanel = panel
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let panel = pinnedPanel, (notification.object as? NSPanel) === panel,
+              let contentSize = panel.contentView?.frame.size else { return }
+        savedNoteSize = contentSize
+    }
+
     private func unpinToPopover() {
+        if let contentSize = pinnedPanel?.contentView?.frame.size {
+            savedNoteSize = contentSize
+        }
+        popover.contentSize = savedNoteSize
         pinnedPanel?.orderOut(nil)
         pinnedPanel?.contentViewController = nil
         pinnedPanel = nil
